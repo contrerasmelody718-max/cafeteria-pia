@@ -1,7 +1,8 @@
 import streamlit as st
-import pulp
+import numpy as np
 import pandas as pd
 import plotly.express as px
+from scipy.optimize import milp, LinearConstraint, Bounds
 
 # 1. CONFIGURACIÓN DE LA PÁGINA
 st.set_page_config(page_title="OptiCoffee Supply", layout="wide")
@@ -23,41 +24,42 @@ cap_a = st.sidebar.number_input("R5. Máx Lotes Proveedor A (Económico - 4 pts)
 cap_b = st.sidebar.number_input("R6. Máx Lotes Proveedor B (Medio - 7 pts)", min_value=0, max_value=20, value=5)
 cap_c = st.sidebar.number_input("R7. Máx Lotes Proveedor C (Premium - 10 pts)", min_value=0, max_value=20, value=6)
 
-# 3. LÓGICA DE OPTIMIZACIÓN
+# 3. LÓGICA DE OPTIMIZACIÓN (Motor SciPy MILP / Simplex)
 lotes_requeridos = int(demanda_kg / 50)
 
-prob = pulp.LpProblem("Maximizacion_Calidad", pulp.LpMaximize)
+# Función Objetivo: Maximizar 4*x1 + 7*x2 + 10*x3 (en SciPy se minimiza multiplicando por -1)
+c = np.array([-4.0, -7.0, -10.0])
 
-# Variables de decisión (Lotes enteros de 50 kg)
-x1 = pulp.LpVariable("Proveedor_A", lowBound=0, cat='Integer')
-x2 = pulp.LpVariable("Proveedor_B", lowBound=0, cat='Integer')
-x3 = pulp.LpVariable("Proveedor_C", lowBound=0, cat='Integer')
+# Variables enteras (1 = Integer)
+integrality = np.array([1, 1, 1])
 
-# Función Objetivo: Maximizar Calidad (Escala 1-10 por lote)
-prob += 4*x1 + 7*x2 + 10*x3, "Calidad_Total"
+# Límites individuales (R5, R6, R7)
+bounds = Bounds(lb=np.array([0, 0, 0]), ub=np.array([cap_a, cap_b, cap_c]))
 
-# Restricciones
-prob += x1 + x2 + x3 == lotes_requeridos, "Demanda_Exacta"
-prob += 9000*x1 + 11000*x2 + 13000*x3 <= presupuesto_max, "Presupuesto_Maximo"
-prob += 4*x1 + 7*x2 + 10*x3 >= calidad_minima_req, "Calidad_Minima"
-prob += x1 + x2 >= entregas_rapidas_min, "Entregas_Rapidas"
-prob += x1 <= cap_a, "Capacidad_A"
-prob += x2 <= cap_b, "Capacidad_B"
-prob += x3 <= cap_c, "Capacidad_C"
+# Matriz de Restricciones (R1, R2, R3, R4)
+A = np.array([
+    [1.0, 1.0, 1.0],          # R2. Demanda Exacta
+    [9000.0, 11000.0, 13000.0], # R1. Presupuesto Máximo
+    [4.0, 7.0, 10.0],         # R3. Calidad Total Mínima
+    [1.0, 1.0, 0.0]           # R4. Entregas Rápidas (A + B)
+])
+
+b_inf = np.array([lotes_requeridos, -np.inf, calidad_minima_req, entregas_rapidas_min])
+b_sup = np.array([lotes_requeridos, presupuesto_max, np.inf, np.inf])
+
+restricciones = LinearConstraint(A, b_inf, b_sup)
 
 # Ejecutar el cálculo matemático
-prob.solve()
-estado = pulp.LpStatus[prob.status]
+resultado = milp(c=c, integrality=integrality, bounds=bounds, constraints=restricciones)
 
 # 4. PANEL DERECHO (Resultados y Gráficos)
-if estado == "Optimal":
-    lotes_a = int(x1.varValue)
-    lotes_b = int(x2.varValue)
-    lotes_c = int(x3.varValue)
+if resultado.success:
+    x_opt = np.round(resultado.x).astype(int)
+    lotes_a, lotes_b, lotes_c = int(x_opt[0]), int(x_opt[1]), int(x_opt[2])
     
-    calidad_total = int(pulp.value(prob.objective))
+    calidad_total = (4 * lotes_a) + (7 * lotes_b) + (10 * lotes_c)
     calidad_promedio = calidad_total / lotes_requeridos if lotes_requeridos > 0 else 0
-    gasto_total = (lotes_a*9000) + (lotes_b*11000) + (lotes_c*13000)
+    gasto_total = (lotes_a * 9000) + (lotes_b * 11000) + (lotes_c * 13000)
     ahorro = presupuesto_max - gasto_total
     
     # Tarjetas de Indicadores (KPIs)
