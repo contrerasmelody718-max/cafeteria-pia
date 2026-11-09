@@ -74,12 +74,12 @@ if estado == "Optimal":
     col_tabla, col_graf = st.columns([1.2, 1])
 
     df_resultados = pd.DataFrame({
-        "Proveedor": ["Proveedor A (Económico)", "Proveedor B (Medio)", "Proveedor C (Premium)"],
-        "Calidad (1-10)":,
-        "Costo por Lote ($)":,
-        "Lotes Asignados (X)": [lotes_a, lotes_b, lotes_c],
-        "Kilos Totales (Kg)": [lotes_a * 50, lotes_b * 50, lotes_c * 50],
-        "Inversión Total ($)": [lotes_a * 9000, lotes_b * 11000, lotes_c * 13000]
+        "Proveedor": list(("Proveedor A (Económico)", "Proveedor B (Medio)", "Proveedor C (Premium)")),
+        "Calidad (1-10)": list((4, 7, 10)),
+        "Costo por Lote ($)": list((9000, 11000, 13000)),
+        "Lotes Asignados (X)": list((lotes_a, lotes_b, lotes_c)),
+        "Kilos Totales (Kg)": list((lotes_a * 50, lotes_b * 50, lotes_c * 50)),
+        "Inversión Total ($)": list((lotes_a * 9000, lotes_b * 11000, lotes_c * 13000))
     })
 
     with col_tabla:
@@ -93,14 +93,14 @@ if estado == "Optimal":
             values="Inversión Total ($)",
             names="Proveedor",
             hole=0.4,
-            color_discrete_sequence=["#A67B5B", "#6F4E37", "#3B2F2F"]
+            color_discrete_sequence=list(("#A67B5B", "#6F4E37", "#3B2F2F"))
         )
         st.plotly_chart(fig, use_container_width=True)
 
     # Desplegable con el estado de las 7 restricciones
     with st.expander("🔍 Ver Verificación de las 7 Restricciones"):
         df_rest = pd.DataFrame({
-            "Restricción": [
+            "Restricción": list((
                 "R1. Presupuesto Máximo",
                 "R2. Demanda Exacta",
                 "R3. Calidad Total Mínima",
@@ -108,8 +108,8 @@ if estado == "Optimal":
                 "R5. Capacidad Máx Proveedor A",
                 "R6. Capacidad Máx Proveedor B",
                 "R7. Capacidad Máx Proveedor C"
-            ],
-            "Valor Obtenido": [
+            )),
+            "Valor Obtenido": list((
                 f"${gasto_total:,.0f}",
                 f"{lotes_requeridos} lotes",
                 f"{calidad_total} pts",
@@ -117,8 +117,8 @@ if estado == "Optimal":
                 f"{lotes_a} lotes",
                 f"{lotes_b} lotes",
                 f"{lotes_c} lotes"
-            ],
-            "Límite Establecido": [
+            )),
+            "Límite Establecido": list((
                 f"<= ${presupuesto_max:,.0f}",
                 f"== {lotes_requeridos} lotes",
                 f">= {calidad_minima_req} pts",
@@ -126,8 +126,8 @@ if estado == "Optimal":
                 f"<= {cap_a} lotes",
                 f"<= {cap_b} lotes",
                 f"<= {cap_c} lotes"
-            ],
-            "Estado": ["✅ Cumplida"] * 7
+            )),
+            "Estado": list(("✅ Cumplida",) * 7)
         })
         st.dataframe(df_rest, hide_index=True, use_container_width=True)
 
