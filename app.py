@@ -27,9 +27,9 @@ lotes_requeridos = demanda_kg / 50  # Cada lote tiene 50 kg
 prob = pulp.LpProblem("Maximizacion_Calidad", pulp.LpMaximize)
 
 # Variables de decisión (Lotes a comprar, deben ser números enteros)
-x1 = pulp.LpVariable("Proveedor_A", lowBound=0, upBound=6, cat='Integer')
-x2 = pulp.LpVariable("Proveedor_B", lowBound=0, upBound=5, cat='Integer')
-x3 = pulp.LpVariable("Proveedor_C", lowBound=0, upBound=6, cat='Integer')
+x1 = pulp.LpVariable("Proveedor_A", lowBound=0, upBound=6, cat=pulp.LpInteger)
+x2 = pulp.LpVariable("Proveedor_B", lowBound=0, upBound=5, cat=pulp.LpInteger)
+x3 = pulp.LpVariable("Proveedor_C", lowBound=0, upBound=6, cat=pulp.LpInteger)
 
 # Función Objetivo: Maximizar Calidad
 prob += 4*x1 + 7*x2 + 10*x3, "Calidad_Total"
