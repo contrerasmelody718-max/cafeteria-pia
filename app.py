@@ -18,29 +18,36 @@ presupuesto_max = st.sidebar.slider("Presupuesto Máximo ($)", min_value=100000,
 demanda_kg = st.sidebar.slider("Demanda de Café (Kg)", min_value=300, max_value=800, value=600, step=50)
 
 # Botón de acción principal
-optimizar = st.sidebar.button("Generar Orden Óptima", type="primary")
+st.sidebar.divider()
+optimizar = st.sidebar.button("Generar Orden Óptima", type="primary", use_container_width=True)
 
 # 3. LÓGICA DE OPTIMIZACIÓN (Oculta al cliente)
-lotes_requeridos = demanda_kg / 50  # Cada lote tiene 50 kg
+# Aseguramos que los lotes sean un número entero
+lotes_requeridos = int(demanda_kg / 50)  
 
 # Inicializar el modelo de Maximización
 prob = pulp.LpProblem("Maximizacion_Calidad", pulp.LpMaximize)
 
-# Variables de decisión (Lotes a comprar, deben ser números enteros)
-x1 = pulp.LpVariable("Proveedor_A", lowBound=0, upBound=6, cat=pulp.LpInteger)
-x2 = pulp.LpVariable("Proveedor_B", lowBound=0, upBound=5, cat=pulp.LpInteger)
-x3 = pulp.LpVariable("Proveedor_C", lowBound=0, upBound=6, cat=pulp.LpInteger)
+# Variables de decisión (Lotes a comprar, definidos de la forma más estable para la nube)
+x1 = pulp.LpVariable("Proveedor_A", lowBound=0, cat='Integer')
+x2 = pulp.LpVariable("Proveedor_B", lowBound=0, cat='Integer')
+x3 = pulp.LpVariable("Proveedor_C", lowBound=0, cat='Integer')
 
 # Función Objetivo: Maximizar Calidad
 prob += 4*x1 + 7*x2 + 10*x3, "Calidad_Total"
 
-# Restricciones
+# Restricciones Originales
 prob += x1 + x2 + x3 == lotes_requeridos, "Demanda_Exacta"
 prob += 9000*x1 + 11000*x2 + 13000*x3 <= presupuesto_max, "Presupuesto_Maximo"
 prob += 4*x1 + 7*x2 + 10*x3 >= 70, "Calidad_Minima"
 prob += x1 + x2 >= 7, "Entregas_Rapidas"
 
-# Se ejecuta el cálculo en milisegundos cuando inicia o cuando presionan el botón
+# Capacidades Máximas de Proveedores (Pasadas como restricciones para evitar errores)
+prob += x1 <= 6, "Capacidad_A"
+prob += x2 <= 5, "Capacidad_B"
+prob += x3 <= 6, "Capacidad_C"
+
+# Ejecutar el cálculo matemático
 prob.solve()
 estado = pulp.LpStatus[prob.status]
 
@@ -57,43 +64,4 @@ if estado == "Optimal":
     # Tarjetas de Indicadores (KPIs)
     st.subheader("📊 Indicadores de la Orden")
     col1, col2, col3 = st.columns(3)
-    col1.metric("Puntuación de Calidad", f"{calidad_total} pts")
-    col2.metric("Presupuesto Utilizado", f"${gasto_total:,.2f}")
-    col3.metric("Lotes Asignados", f"{int(lotes_requeridos)} lotes")
-    
-    st.divider()
-
-    # Zona inferior: Tabla y Gráfico
-    col_tabla, col_grafico = st.columns(2)
-    
-    with col_tabla:
-        st.subheader("📋 Orden de Compra Generada")
-        datos_orden = {
-            "Proveedor": ["Proveedor A", "Proveedor B", "Proveedor C"],
-            "Lotes a Comprar": [lotes_a, lotes_b, lotes_c],
-            "Inversión": [f"${lotes_a*9000:,}", f"${lotes_b*11000:,}", f"${lotes_c*13000:,}"]
-        }
-        df_orden = pd.DataFrame(datos_orden)
-        st.dataframe(df_orden, hide_index=True, use_container_width=True)
-        
-        st.success(f"✅ Se garantizan {lotes_a + lotes_b} lotes de entrega rápida (≤ 3 días).")
-
-    with col_grafico:
-        # Gráfico circular (Donut) usando Plotly
-        df_grafico = pd.DataFrame({
-            "Proveedor": ["A", "B", "C"],
-            "Lotes": [lotes_a, lotes_b, lotes_c]
-        })
-        # Filtramos los proveedores a los que no se les compró nada
-        df_grafico = df_grafico[df_grafico["Lotes"] > 0] 
-        
-        fig = px.pie(df_grafico, values='Lotes', names='Proveedor', hole=0.5, 
-                     title="Distribución de Lotes por Proveedor",
-                     color_discrete_sequence=px.colors.sequential.Teal)
-        fig.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig, use_container_width=True)
-
-else:
-    # Manejo de escenarios imposibles
-    st.error("⚠️ Alerta: Con el presupuesto o demanda actual, es matemáticamente imposible cumplir todas las reglas del negocio (entregas rápidas, calidad mínima o capacidades máximas de proveedores).")
-    st.info("💡 Sugerencia: Intente aumentar el presupuesto o reducir la demanda en el panel izquierdo.")
+    col1.metric("Puntuación de Calidad", f"{calidad
