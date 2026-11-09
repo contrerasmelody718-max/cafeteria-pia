@@ -1,4 +1,5 @@
-streamlit 
-pulp 
-pandas 
+streamlit
+scipy
+numpy
+pandas
 plotly
