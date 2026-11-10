@@ -4,181 +4,192 @@ import pandas as pd
 import plotly.express as px
 from scipy.optimize import milp, LinearConstraint, Bounds
 from datetime import datetime
+from estilos import aplicar_estilos, mostrar_barra
 
 st.set_page_config(page_title="OptiCoffee | Portal B2B", layout="wide", initial_sidebar_state="collapsed")
+aplicar_estilos()
 
-# ==============================================================================
-# 1. BASE DE DATOS EN MEMORIA (USUARIOS, INVENTARIOS, CITAS Y ÓRDENES)
-# ==============================================================================
-USUARIOS_VALIDOS = {
-    "compras": {"pass": "1234", "rol": "Empresa", "nombre": "Gerencia de Compras (OptiCoffee)"},
-    "provA": {"pass": "1234", "rol": "Proveedor", "id_prov": "A", "nombre": "Proveedor A (Económico)"},
-    "provB": {"pass": "1234", "rol": "Proveedor", "id_prov": "B", "nombre": "Proveedor B (Medio)"},
-    "provC": {"pass": "1234", "rol": "Proveedor", "id_prov": "C", "nombre": "Proveedor C (Premium)"}
+USUARIOS = {
+    "compras": {"pass": "1234", "rol": "Empresa", "nombre": "Gerencia de Compras"},
+    "provA": {"pass": "1234", "rol": "Proveedor", "id": "A", "nombre": "Proveedor A (Económico)"},
+    "provB": {"pass": "1234", "rol": "Proveedor", "id": "B", "nombre": "Proveedor B (Medio)"},
+    "provC": {"pass": "1234", "rol": "Proveedor", "id": "C", "nombre": "Proveedor C (Premium)"}
 }
 
-if "usuario_activo" not in st.session_state:
-    st.session_state.usuario_activo = None
-
-if "datos_proveedores" not in st.session_state:
-    st.session_state.datos_proveedores = {
-        "A": {"nombre": "Proveedor A (Económico)", "precio": 9000, "calidad": 4, "stock": 6, "dias": 2},
-        "B": {"nombre": "Proveedor B (Medio)", "precio": 11000, "calidad": 7, "stock": 5, "dias": 3},
-        "C": {"nombre": "Proveedor C (Premium)", "precio": 13000, "calidad": 10, "stock": 6, "dias": 5}
+if "user" not in st.session_state:
+    st.session_state.user = None
+if "provs" not in st.session_state:
+    st.session_state.provs = {
+        "A": {"nombre": "Proveedor A (Económico)", "precio": 9000, "calidad": 4, "stock": 6},
+        "B": {"nombre": "Proveedor B (Medio)", "precio": 11000, "calidad": 7, "stock": 5},
+        "C": {"nombre": "Proveedor C (Premium)", "precio": 13000, "calidad": 10, "stock": 6}
     }
+if "citas" not in st.session_state:
+    st.session_state.citas = []
+if "chat" not in st.session_state:
+    st.session_state.chat = []
+if "ordenes" not in st.session_state:
+    st.session_state.ordenes = []
 
-if "citas_guardadas" not in st.session_state:
-    st.session_state.citas_guardadas = []
-if "historial_chat" not in st.session_state:
-    st.session_state.historial_chat = []
-if "ordenes_emitidas" not in st.session_state:
-    st.session_state.ordenes_emitidas = []
-
-# ==============================================================================
-# 2. ESTILOS VISUALES CÁLIDOS Y CORPORATIVOS
-# ==============================================================================
-st.markdown("""
-<style>
-    .stApp { background-color: #FAF7F2; color: #2D2420; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    .brand-navbar { background-color: #3C2A21; color: #F4EAE0; padding: 20px 30px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(60, 42, 33, 0.08); }
-    .brand-title { font-size: 24px; font-weight: 700; margin: 0; color: #F4EAE0; }
-    .brand-tag { background-color: #D5CEA3; color: #1A120B; font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 20px; }
-    .login-card { background-color: #FFFFFF; padding: 35px; border-radius: 16px; border: 1px solid #E6D5B8; box-shadow: 0 8px 24px rgba(60, 42, 33, 0.06); }
-    .info-card { background-color: #FFFFFF; padding: 20px; border-radius: 12px; border: 1px solid #EAE0D5; }
-    .stTabs [data-baseweb="tab-list"] { gap: 12px; }
-    .stTabs [data-baseweb="tab"] { height: 46px; border-radius: 10px; padding: 0px 22px; background-color: #EAE3D2; color: #3C2A21; font-weight: 600; }
-    .stTabs [aria-selected="true"] { background-color: #D5CEA3 !important; color: #1A120B !important; }
-    .stButton>button { border-radius: 10px; font-weight: 600; }
-</style>
-""", unsafe_allow_html=True)
-
-# ==============================================================================
-# 3. PANTALLA DE INICIO DE SESIÓN (SI NO HAY USUARIO LOGUEADO)
-# ==============================================================================
-if st.session_state.usuario_activo is None:
-    st.markdown("""
-    <div class="brand-navbar">
-        <div>
-            <h1 class="brand-title">OptiCoffee Supply Portal</h1>
-            <span style="font-size: 13px; opacity: 0.8;">Plataforma B2B de Abastecimiento y Socios Productores</span>
-        </div>
-        <span class="brand-tag">Acceso Seguro</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col_izq, col_centro, col_der = st.columns([1, 1.4, 1])
-    with col_centro:
+# 1. PANTALLA DE LOGIN
+if st.session_state.user is None:
+    mostrar_barra("OptiCoffee Supply Portal", "Plataforma B2B de Abastecimiento y Proveedores", "Acceso Seguro")
+    _, col_c, _ = st.columns([1, 1.4, 1])
+    with col_c:
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        st.markdown("### Iniciar Sesión en el Portal")
-        st.write("Ingresa tus credenciales asignadas para acceder a tu panel operativo.")
-        
-        usuario_in = st.text_input("Usuario", placeholder="Ej. compras o provA")
-        pass_in = st.text_input("Contraseña", type="password", placeholder="••••")
-        
+        st.subheader("Iniciar Sesión")
+        u_in = st.text_input("Usuario", placeholder="compras, provA, provB o provC")
+        p_in = st.text_input("Contraseña", type="password", placeholder="1234")
         if st.button("Ingresar al Sistema", type="primary", use_container_width=True):
-            if usuario_in in USUARIOS_VALIDOS and USUARIOS_VALIDOS[usuario_in]["pass"] == pass_in:
-                st.session_state.usuario_activo = USUARIOS_VALIDOS[usuario_in]
+            if u_in in USUARIOS and USUARIOS[u_in]["pass"] == p_in:
+                st.session_state.user = USUARIOS[u_in]
                 st.rerun()
             else:
-                st.error("Usuario o contraseña incorrectos. Verifica tus datos.")
-        
-        st.markdown("---")
-        with st.expander("🔑 Ver credenciales de prueba (Demo)"):
-            st.markdown("""
-            * **Portal Empresa (Compras):** Usuario `compras` | Clave `1234`
-            * **Portal Proveedor A:** Usuario `provA` | Clave `1234`
-            * **Portal Proveedor B:** Usuario `provB` | Clave `1234`
-            * **Portal Proveedor C:** Usuario `provC` | Clave `1234`
-            """)
+                st.error("Credenciales incorrectas.")
+        with st.expander("🔑 Ver usuarios de prueba"):
+            st.write("Empresa: `compras` / `1234` | Proveedores: `provA`, `provB`, `provC` / `1234`")
         st.markdown('</div>', unsafe_allow_html=True)
 
-# ==============================================================================
-# 4. VISTA EXCLUSIVA PARA PROVEEDORES (SI ENTRA PROVA, PROVB O PROVC)
-# ==============================================================================
-elif st.session_state.usuario_activo["rol"] == "Proveedor":
-    user = st.session_state.usuario_activo
-    id_p = user["id_prov"]
-    datos_mi_perfil = st.session_state.datos_proveedores[id_p]
+# 2. PORTAL EXCLUSIVO PROVEEDORES
+elif st.session_state.user["rol"] == "Proveedor":
+    u = st.session_state.user
+    pid = u["id"]
+    mi_p = st.session_state.provs[pid]
 
-    # Encabezado con botón de cerrar sesión
-    c_head1, c_head2 = st.columns([4, 1])
-    with c_head1:
-        st.markdown(f"""
-        <div class="brand-navbar">
-            <div>
-                <h1 class="brand-title">Portal Exclusivo de Socios | {user['nombre']}</h1>
-                <span style="font-size: 13px; opacity: 0.8;">Gestión de Inventario, Órdenes Asignadas y Comunicación Directa</span>
-            </div>
-            <span class="brand-tag">Socio Certificado</span>
-        </div>
-        """, unsafe_allow_html=True)
-    with c_head2:
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        mostrar_barra(f"Portal de Socios | {u['nombre']}", "Gestión de Inventario y Órdenes Asignadas", "Socio Certificado")
+    with c2:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("Cerrar Sesión", use_container_width=True):
-            st.session_state.usuario_activo = None
+            st.session_state.user = None
             st.rerun()
 
-    tab_p1, tab_p2, tab_p3 = st.tabs(["📦 Mis Órdenes Asignadas", "⚙️ Actualizar Mi Oferta y Stock", "📅 Mis Citas y Mensajes"])
-
-    # Pestaña 1 del Proveedor: Ver solo sus órdenes
-    with tab_p1:
-        st.markdown("#### Órdenes de Compra Recibidas")
-        mis_ordenes = [o for o in st.session_state.ordenes_emitidas if o[f"Lotes_{id_p}"] > 0]
-        if mis_ordenes:
-            for ord_item in mis_ordenes:
-                lotes_mios = ord_item[f"Lotes_{id_p}"]
-                monto_mio = lotes_mios * datos_mi_perfil["precio"]
-                st.success(f"**Folio {ord_item['Folio']}** ({ord_item['Fecha']}) — Solicitud de **{lotes_mios} lotes ({lotes_mios*50} kg)** | Total a facturar: **${monto_mio:,.2f} MXN**")
+    t1, t2, t3 = st.tabs(["📦 Mis Órdenes", "⚙️ Mi Oferta y Stock", "📅 Citas y Mensajes"])
+    with t1:
+        mias = [o for o in st.session_state.ordenes if o[f"Lotes_{pid}"] > 0]
+        if mias:
+            for o in mias:
+                lotes = o[f"Lotes_{pid}"]
+                st.success(f"**Folio {o['Folio']}** ({o['Fecha']}) — Pedido de **{lotes} lotes ({lotes*50} kg)** | Facturación: **${lotes * mi_p['precio']:,.2f}**")
         else:
-            st.info("Aún no tienes órdenes de compra asignadas en este ciclo.")
+            st.info("Sin órdenes asignadas por el momento.")
+    with t2:
+        col1, col2 = st.columns(2)
+        with col1:
+            n_stock = st.number_input("Sacos Disponibles (50 kg)", 0, 50, int(mi_p["stock"]))
+        with col2:
+            n_precio = st.number_input("Precio por Lote ($ MXN)", 5000, 25000, int(mi_p["precio"]), step=500)
+        if st.button("Actualizar Mi Oferta", type="primary"):
+            st.session_state.provs[pid]["stock"] = n_stock
+            st.session_state.provs[pid]["precio"] = n_precio
+            st.success("Datos actualizados en el portal de compras.")
+    with t3:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("##### Mis Citas")
+            mc = [c for c in st.session_state.citas if pid in c["Proveedor"]]
+            st.dataframe(pd.DataFrame(mc), hide_index=True) if mc else st.info("Sin citas.")
+        with col2:
+            st.markdown("##### Chat con Compras")
+            mp = st.text_input("Escribir mensaje a Compras...")
+            if st.button("Enviar"):
+                if mp:
+                    st.session_state.chat.append({"Hora": datetime.now().strftime("%H:%M"), "De": u["nombre"], "Mensaje": mp})
+            if st.session_state.chat:
+                st.dataframe(pd.DataFrame(st.session_state.chat), hide_index=True)
 
-    # Pestaña 2 del Proveedor: Modificar su stock y precio en tiempo real
-    with tab_p2:
-        st.markdown("#### Disponibilidad de Inventario y Tarifa Vigente")
-        st.write("Actualiza tu capacidad disponible. Estos cambios se reflejarán automáticamente en el sistema de compras:")
-        
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            nuevo_stock = st.number_input("Sacos Disponibles para Entrega Inmediata (50 kg)", min_value=0, max_value=50, value=int(datos_mi_perfil["stock"]))
-        with col_f2:
-            nuevo_precio = st.number_input("Precio por Lote de 50 kg ($ MXN)", min_value=5000, max_value=25000, value=int(datos_mi_perfil["precio"]), step=500)
-        
-        if st.button("Guardar Actualización de Inventario", type="primary"):
-            st.session_state.datos_proveedores[id_p]["stock"] = nuevo_stock
-            st.session_state.datos_proveedores[id_p]["precio"] = nuevo_precio
-            st.success("Tu inventario y tarifa han sido actualizados en la plataforma.")
+# 3. PORTAL GERENCIA DE COMPRAS
+elif st.session_state.user["rol"] == "Empresa":
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        mostrar_barra("OptiCoffee Supply Portal", "Planeación de Pedidos y Gestión de Proveedores", "Gerencia de Compras")
+    with c2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Cerrar Sesión", use_container_width=True):
+            st.session_state.user = None
+            st.rerun()
 
-    # Pestaña 3 del Proveedor: Sus citas y chat
-    with tab_p3:
-        col_pc1, col_pc2 = st.columns(2)
-        with col_pc1:
-            st.markdown("##### Citas Agendadas Conmigo")
-            mis_citas = [c for c in st.session_state.citas_guardadas if id_p in c["Proveedor"]]
-            if mis_citas:
-                st.dataframe(pd.DataFrame(mis_citas), hide_index=True, use_container_width=True)
-            else:
-                st.info("No tienes reuniones programadas por el momento.")
-        with col_pc2:
-            st.markdown("##### Mensajes Directos con Compras")
-            msg_prov = st.text_input("Enviar mensaje a Gerencia de Compras...")
-            if st.button("Enviar al Equipo de Compras"):
-                if msg_prov:
-                    st.session_state.historial_chat.append({
-                        "Hora": datetime.now().strftime("%H:%M"),
-                        "Remitente": user["nombre"],
-                        "Mensaje": msg_prov
-                    })
-                    st.success("Mensaje enviado a Compras.")
-            if st.session_state.historial_chat:
-                st.dataframe(pd.DataFrame(st.session_state.historial_chat), hide_index=True, use_container_width=True)
+    a1, a2, a3 = st.columns(3)
+    with a1:
+        with st.popover("📅 Agendar Cita", use_container_width=True):
+            pc = st.selectbox("Proveedor", ["Proveedor A", "Proveedor B", "Proveedor C"])
+            fc = st.date_input("Fecha", datetime.now())
+            mc = st.text_input("Motivo", "Revisión de entregas")
+            if st.button("Confirmar Cita", type="primary"):
+                st.session_state.citas.append({"Proveedor": pc, "Fecha": str(fc), "Motivo": mc})
+                st.success("Cita enviada.")
+    with a2:
+        with st.popover("💬 Chat Directo", use_container_width=True):
+            pch = st.selectbox("Canal", ["Proveedor A", "Proveedor B", "Proveedor C"])
+            mch = st.text_input("Mensaje...")
+            if st.button("Enviar Mensaje"):
+                if mch:
+                    st.session_state.chat.append({"Hora": datetime.now().strftime("%H:%M"), "De": f"Compras -> {pch}", "Mensaje": mch})
+                    st.success("Enviado.")
+    with a3:
+        with st.popover("📋 Políticas", use_container_width=True):
+            st.write("Lotes de 50 kg | Mín. 7 lotes rápidos (<=3 días) | Calidad >= 70 pts")
 
-# ==============================================================================
-# 5. VISTA EMPRESA / COMPRAS (SI ENTRA EL USUARIO "COMPRAS")
-# ==============================================================================
-elif st.session_state.usuario_activo["rol"] == "Empresa":
-    c_head1, c_head2 = st.columns([4, 1])
-    with c_head1:
-        st.markdown("""
-        <div class="brand-navbar">
-            <div>
-                <h1 class="brand-title">OptiCoffee Supply Portal | Gerencia de Compras</h1>
+    st.markdown("<br>", unsafe_allow_html=True)
+    in1, in2 = st.columns(2)
+    with in1:
+        presupuesto = st.number_input("Presupuesto Disponible ($ MXN)", 10000, 500000, 130000, step=5000)
+    with in2:
+        demanda = st.number_input("Volumen Requerido (Kg)", 50, 2000, 600, step=50)
+
+    pA, pB, pC = st.session_state.provs["A"], st.session_state.provs["B"], st.session_state.provs["C"]
+    lotes_req = int(demanda / 50)
+    res = milp(
+        c=np.array([-float(pA["calidad"]), -float(pB["calidad"]), -float(pC["calidad"])]),
+        integrality=np.ones(3),
+        bounds=Bounds(lb=np.zeros(3), ub=np.array([float(pA["stock"]), float(pB["stock"]), float(pC["stock"])])),
+        constraints=LinearConstraint(
+            np.array([[1.0, 1.0, 1.0], [float(pA["precio"]), float(pB["precio"]), float(pC["precio"])], [float(pA["calidad"]), float(pB["calidad"]), float(pC["calidad"])], [1.0, 1.0, 0.0]]),
+            np.array([lotes_req, -np.inf, 70.0, 7.0], dtype=float),
+            np.array([lotes_req, presupuesto, np.inf, np.inf], dtype=float)
+        )
+    )
+
+    if res.success:
+        xo = np.round(res.x).astype(int)
+        la, lb, lc = int(xo.item(0)), int(xo.item(1)), int(xo.item(2))
+        cal_tot = (pA["calidad"]*la) + (pB["calidad"]*lb) + (pC["calidad"]*lc)
+        gasto = (la*pA["precio"]) + (lb*pB["precio"]) + (lc*pC["precio"])
+        prom = round(cal_tot / lotes_req, 2) if lotes_req > 0 else 0
+
+        df_o = pd.DataFrame({
+            "Proveedor": (pA["nombre"], pB["nombre"], pC["nombre"]),
+            "Calidad": (f"{pA['calidad']}/10", f"{pB['calidad']}/10", f"{pC['calidad']}/10"),
+            "Lotes": (la, lb, lc),
+            "Kilos": (la*50, lb*50, lc*50),
+            "Inversión": (la*pA["precio"], lb*pB["precio"], lc*pC["precio"])
+        })
+
+        tab1, tab2 = st.tabs(["🛒 Pedido Sugerido", "🗂️ Centro de Control"])
+        with tab1:
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Calidad Promedio", f"{prom} / 10", f"{cal_tot} pts")
+            m2.metric("Inversión Total", f"${gasto:,.2f}", f"${presupuesto - gasto:,.2f} libre")
+            m3.metric("Total Lotes", f"{lotes_req} Lotes", f"{la + lb} rápidos")
+
+            ct, cg = st.columns([1.3, 1])
+            with ct:
+                st.dataframe(df_o, hide_index=True, use_container_width=True)
+                if st.button("✅ Enviar Orden a Proveedores", type="primary", use_container_width=True):
+                    fol = f"OC-{len(st.session_state.ordenes) + 101}"
+                    st.session_state.ordenes.append({"Folio": fol, "Fecha": datetime.now().strftime("%d/%m %H:%M"), "Total": f"${gasto:,.2f}", "Lotes_A": la, "Lotes_B": lb, "Lotes_C": lc})
+                    st.success(f"Orden {fol} enviada al portal de cada proveedor.")
+            with cg:
+                fig = px.pie(df_o[df_o["Lotes"] > 0], values="Inversión", names="Proveedor", hole=0.45, color_discrete_sequence=("#A0522D", "#CD853F", "#DEB887"))
+                fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig, use_container_width=True)
+        with tab2:
+            st.markdown("##### Órdenes Emitidas")
+            st.dataframe(pd.DataFrame(st.session_state.ordenes), hide_index=True) if st.session_state.ordenes else st.info("Sin órdenes.")
+            b1, b2 = st.columns(2)
+            with b1:
+                st.markdown("##### Citas Agendadas")
+                st.dataframe(pd.DataFrame(st.session_state.citas), hide_index=True) if st.session_state.citas else st.info("Sin citas.")
+            with b2:
+                st.markdown("##### Mensajes")
