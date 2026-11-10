@@ -24,6 +24,8 @@ if "provs" not in st.session_state:
         "B": {"nombre": "Proveedor B (Medio)", "precio": 11000, "calidad": 7, "stock": 5},
         "C": {"nombre": "Proveedor C (Premium)", "precio": 13000, "calidad": 10, "stock": 6}
     }
+if "reglas" not in st.session_state:
+    st.session_state.reglas = {"calidad_min": 70, "rapidos_min": 7}
 if "citas" not in st.session_state:
     st.session_state.citas = [{"Proveedor": "Proveedor C (Premium)", "Fecha": "2026-11-12", "Motivo": "Catación de lote de altura"}]
 if "chat" not in st.session_state:
@@ -91,14 +93,45 @@ elif st.session_state.user["rol"] == "Empresa":
                     st.rerun()
     with a3:
         with st.popover("📋 Políticas", use_container_width=True):
-            st.write("• Sacos de 50 kg | Mín. 7 sacos rápidos | Calidad >= 70 pts")
+            st.write(f"• Sacos de 50 kg | Mín. {st.session_state.reglas['rapidos_min']} sacos rápidos | Calidad >= {st.session_state.reglas['calidad_min']} pts")
 
     st.markdown("<br>", unsafe_allow_html=True)
     in1, in2 = st.columns(2)
     with in1: presupuesto = st.number_input("Presupuesto Disponible ($ MXN)", 10000, 500000, 130000, step=5000)
     with in2: demanda = st.number_input("Volumen Requerido (Kg)", 50, 2000, 600, step=50)
 
+    # PANEL OCULTO DE CONFIGURACIÓN PARAMÉTRICA (PARA DEMOSTRAR FLEXIBILIDAD AL MAESTRO)
+    with st.expander("⚙️ Configuración Avanzada de Parámetros del Modelo (Opcional)"):
+        st.caption("Modifica las tarifas, puntajes, inventarios o políticas del problema en tiempo real:")
+        pA, pB, pC = st.session_state.provs["A"], st.session_state.provs["B"], st.session_state.provs["C"]
+        
+        c_p1, c_p2, c_p3 = st.columns(3)
+        with c_p1:
+            st.markdown("**Proveedor A**")
+            pA["precio"] = st.number_input("Precio A ($)", 1000, 50000, int(pA["precio"]), step=500)
+            pA["calidad"] = st.number_input("Calidad A (1-10)", 1, 10, int(pA["calidad"]))
+            pA["stock"] = st.number_input("Stock A (Sacos)", 0, 50, int(pA["stock"]))
+        with c_p2:
+            st.markdown("**Proveedor B**")
+            pB["precio"] = st.number_input("Precio B ($)", 1000, 50000, int(pB["precio"]), step=500)
+            pB["calidad"] = st.number_input("Calidad B (1-10)", 1, 10, int(pB["calidad"]))
+            pB["stock"] = st.number_input("Stock B (Sacos)", 0, 50, int(pB["stock"]))
+        with c_p3:
+            st.markdown("**Proveedor C**")
+            pC["precio"] = st.number_input("Precio C ($)", 1000, 50000, int(pC["precio"]), step=500)
+            pC["calidad"] = st.number_input("Calidad C (1-10)", 1, 10, int(pC["calidad"]))
+            pC["stock"] = st.number_input("Stock C (Sacos)", 0, 50, int(pC["stock"]))
+            
+        r1, r2 = st.columns(2)
+        with r1:
+            st.session_state.reglas["calidad_min"] = st.number_input("Política: Puntaje Mínimo Total", 0, 300, int(st.session_state.reglas["calidad_min"]))
+        with r2:
+            st.session_state.reglas["rapidos_min"] = st.number_input("Política: Mínimo Sacos Rápidos (A+B)", 0, 50, int(st.session_state.reglas["rapidos_min"]))
+
     pA, pB, pC = st.session_state.provs["A"], st.session_state.provs["B"], st.session_state.provs["C"]
+    cal_min = float(st.session_state.reglas["calidad_min"])
+    rap_min = float(st.session_state.reglas["rapidos_min"])
+
     lotes_req = int(demanda / 50)
     c_obj = np.array([-float(pA["calidad"]), -float(pB["calidad"]), -float(pC["calidad"])])
     b_bounds = Bounds(lb=np.zeros(3), ub=np.array([float(pA["stock"]), float(pB["stock"]), float(pC["stock"])]))
@@ -109,15 +142,12 @@ elif st.session_state.user["rol"] == "Empresa":
         [1.0, 1.0, 0.0]
     ])
 
-    # INTENTO 1: MODELO ESTRICTO (CUMPLE TODAS LAS REGLAS AL 100%)
     res = milp(
         c=c_obj, integrality=np.ones(3), bounds=b_bounds,
-        constraints=LinearConstraint(matriz_A, np.array([lotes_req, -np.inf, 70.0, 7.0], dtype=float), np.array([lotes_req, presupuesto, np.inf, np.inf], dtype=float))
+        constraints=LinearConstraint(matriz_A, np.array([lotes_req, -np.inf, cal_min, rap_min], dtype=float), np.array([lotes_req, presupuesto, np.inf, np.inf], dtype=float))
     )
 
     modo_contingencia = False
-
-    # INTENTO 2 (PLAN B): SI NO ALCANZA EL DINERO, AJUSTA AL MÁXIMO VOLUMEN POSIBLE DENTRO DEL PRESUPUESTO
     if not res.success:
         modo_contingencia = True
         res = milp(
@@ -136,7 +166,7 @@ elif st.session_state.user["rol"] == "Empresa":
         prom = round(cal_tot / sacos_reales, 2) if sacos_reales > 0 else 0
 
         if modo_contingencia:
-            st.warning(f"⚠️ **Ajuste Automático de Presupuesto:** Con **${presupuesto:,.2f}** no es posible cubrir los {demanda} kg completos bajo las políticas estándar. Se generó la **mejor alternativa posible** surtiendo **{kilos_reales} kg ({sacos_reales} sacos)** con máxima calidad sin pasarse de tu presupuesto.")
+            st.warning(f"⚠️ **Plan de Contingencia Activado:** Con **${presupuesto:,.2f}** no es posible cubrir los {demanda} kg completos bajo las políticas estándar. Se generó la **mejor alternativa posible** surtiendo **{kilos_reales} kg ({sacos_reales} sacos)** con máxima calidad sin pasarse de tu presupuesto.")
 
         df_o = pd.DataFrame({
             "Proveedor": (pA["nombre"], pB["nombre"], pC["nombre"]),
@@ -146,28 +176,3 @@ elif st.session_state.user["rol"] == "Empresa":
             "Inversión ($)": (f"${la*pA['precio']:,.2f}", f"${lb*pB['precio']:,.2f}", f"${lc*pC['precio']:,.2f}")
         })
 
-        total_items = len(st.session_state.ordenes) + len(st.session_state.citas) + len(st.session_state.chat)
-        tab1, tab2 = st.tabs(["🛒 Pedido Sugerido", f"🗂️ Centro de Control ({total_items})"])
-
-        with tab1:
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Calidad Promedio", f"{prom} / 10", f"{cal_tot} pts totales")
-            m2.metric("Inversión Total", f"${gasto:,.2f}", f"${presupuesto - gasto:,.2f} disponible")
-            m3.metric("Sacos Asignados", f"{sacos_reales} de {lotes_req} Sacos", f"{kilos_reales} kg cubiertos")
-
-            ct, cg = st.columns((1.3, 1))
-            with ct:
-                st.dataframe(df_o, hide_index=True, use_container_width=True)
-                if st.button("✅ Autorizar y Enviar Orden", type="primary", use_container_width=True):
-                    fol = f"OC-{len(st.session_state.ordenes) + 100}"
-                    st.session_state.ordenes.append({"Folio": fol, "Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Total": f"${gasto:,.2f}", "Kilos": kilos_reales, "Lotes_A": la, "Lotes_B": lb, "Lotes_C": lc})
-                    st.rerun()
-            with cg:
-                df_graf = pd.DataFrame({"Proveedor": (pA["nombre"], pB["nombre"], pC["nombre"]), "Monto": (la*pA["precio"], lb*pB["precio"], lc*pC["precio"])})
-                fig = px.pie(df_graf[df_graf["Monto"] > 0], values="Monto", names="Proveedor", hole=0.45, color_discrete_sequence=("#A0522D", "#CD853F", "#DEB887"))
-                fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), paper_bgcolor="rgba(0,0,0,0)")
-                st.plotly_chart(fig, use_container_width=True)
-        with tab2:
-            mostrar_centro_control()
-    else:
-        st.error("El presupuesto ingresado es menor al costo de un solo saco de café ($9,000). Aumenta el monto para generar una propuesta.")
