@@ -34,7 +34,7 @@ if "ordenes" not in st.session_state:
 # 1. LOGIN
 if st.session_state.user is None:
     mostrar_barra("OptiCoffee Supply Portal", "Plataforma B2B de Abastecimiento y Proveedores", "Acceso Seguro")
-    _, col_c, _ = st.columns([1, 1.4, 1])
+    _, col_c, _ = st.columns((1, 1.4, 1))
     with col_c:
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
         st.subheader("Iniciar Sesión")
@@ -53,7 +53,7 @@ if st.session_state.user is None:
 # 2. PORTAL PROVEEDORES
 elif st.session_state.user["rol"] == "Proveedor":
     u = st.session_state.user
-    c1, c2 = st.columns()
+    c1, c2 = st.columns((4, 1))
     with c1: mostrar_barra(f"Portal de Socios | {u['nombre']}", "Gestión de Inventario y Órdenes", "Socio Certificado")
     with c2:
         st.markdown("<br>", unsafe_allow_html=True)
@@ -64,7 +64,7 @@ elif st.session_state.user["rol"] == "Proveedor":
 
 # 3. PORTAL COMPRAS
 elif st.session_state.user["rol"] == "Empresa":
-    c1, c2 = st.columns()
+    c1, c2 = st.columns((4, 1))
     with c1: mostrar_barra("OptiCoffee Supply Portal", "Planeación de Pedidos y Proveedores", "Gerencia de Compras")
     with c2:
         st.markdown("<br>", unsafe_allow_html=True)
@@ -135,7 +135,7 @@ elif st.session_state.user["rol"] == "Empresa":
             m2.metric("Inversión Total", f"${gasto:,.2f}", f"${presupuesto - gasto:,.2f} disponible")
             m3.metric("Total Sacos", f"{lotes_req} Sacos", f"{la + lb} entrega rápida")
 
-            ct, cg = st.columns([1.3, 1])
+            ct, cg = st.columns((1.3, 1))
             with ct:
                 st.dataframe(df_o, hide_index=True, use_container_width=True)
                 if st.button("✅ Autorizar y Enviar Orden", type="primary", use_container_width=True):
