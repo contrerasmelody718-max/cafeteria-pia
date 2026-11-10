@@ -45,7 +45,7 @@ if st.session_state.user is None:
                 st.session_state.user = USUARIOS[u_in]
                 st.rerun()
             else:
-                st.error("Credenciales incorrectas.")
+                st.error("Usuario o contraseña incorrectos.")
         with st.expander("🔑 Ver usuarios de prueba"):
             st.write("Empresa: `compras` / `1234` | Proveedores: `provA`, `provB`, `provC` / `1234`")
         st.markdown('</div>', unsafe_allow_html=True)
@@ -71,9 +71,9 @@ elif st.session_state.user["rol"] == "Proveedor":
         if mias:
             for o in mias:
                 lotes = o[f"Lotes_{pid}"]
-                st.success(f"**Folio {o['Folio']}** ({o['Fecha']}) — Pedido de **{lotes} lotes ({lotes*50} kg)** | Facturación: **${lotes * mi_p['precio']:,.2f}**")
+                st.success(f"**Orden {o['Folio']}** ({o['Fecha']}) — Solicitud de **{lotes} sacos ({lotes*50} kg)** | Total a facturar: **${lotes * mi_p['precio']:,.2f} MXN**")
         else:
-            st.info("Sin órdenes asignadas por el momento.")
+            st.info("Aún no tienes órdenes asignadas en este ciclo.")
     with t2:
         col1, col2 = st.columns(2)
         with col1:
@@ -83,21 +83,27 @@ elif st.session_state.user["rol"] == "Proveedor":
         if st.button("Actualizar Mi Oferta", type="primary"):
             st.session_state.provs[pid]["stock"] = n_stock
             st.session_state.provs[pid]["precio"] = n_precio
-            st.success("Datos actualizados en el portal de compras.")
+            st.success("Tu tarifa y disponibilidad se han actualizado.")
     with t3:
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("##### Mis Citas")
+            st.markdown("##### Reuniones Confirmadas")
             mc = [c for c in st.session_state.citas if pid in c["Proveedor"]]
-            st.dataframe(pd.DataFrame(mc), hide_index=True) if mc else st.info("Sin citas.")
+            if mc:
+                for cita in mc:
+                    st.info(f"📅 **{cita['Fecha']}** — {cita['Motivo']}")
+            else:
+                st.write("No tienes reuniones agendadas.")
         with col2:
-            st.markdown("##### Chat con Compras")
-            mp = st.text_input("Escribir mensaje a Compras...")
-            if st.button("Enviar"):
+            st.markdown("##### Conversación con Compras")
+            for msg in st.session_state.chat:
+                with st.chat_message("user" if "Proveedor" in msg["De"] else "assistant"):
+                    st.write(f"**{msg['De']}** ({msg['Hora']}): {msg['Mensaje']}")
+            mp = st.text_input("Escribe un mensaje para Compras...")
+            if st.button("Enviar Mensaje"):
                 if mp:
                     st.session_state.chat.append({"Hora": datetime.now().strftime("%H:%M"), "De": u["nombre"], "Mensaje": mp})
-            if st.session_state.chat:
-                st.dataframe(pd.DataFrame(st.session_state.chat), hide_index=True)
+                    st.rerun()
 
 # 3. PORTAL GERENCIA DE COMPRAS
 elif st.session_state.user["rol"] == "Empresa":
@@ -113,23 +119,25 @@ elif st.session_state.user["rol"] == "Empresa":
     a1, a2, a3 = st.columns(3)
     with a1:
         with st.popover("📅 Agendar Cita", use_container_width=True):
-            pc = st.selectbox("Proveedor", ["Proveedor A", "Proveedor B", "Proveedor C"])
+            pc = st.selectbox("Proveedor", ["Proveedor A (Económico)", "Proveedor B (Medio)", "Proveedor C (Premium)"])
             fc = st.date_input("Fecha", datetime.now())
-            mc = st.text_input("Motivo", "Revisión de entregas")
-            if st.button("Confirmar Cita", type="primary"):
+            mc = st.text_input("Motivo", "Revisión de entregas y calidad")
+            if st.button("Confirmar Cita", type="primary", use_container_width=True):
                 st.session_state.citas.append({"Proveedor": pc, "Fecha": str(fc), "Motivo": mc})
-                st.success("Cita enviada.")
+                st.success("Reunión agendada.")
     with a2:
         with st.popover("💬 Chat Directo", use_container_width=True):
             pch = st.selectbox("Canal", ["Proveedor A", "Proveedor B", "Proveedor C"])
-            mch = st.text_input("Mensaje...")
-            if st.button("Enviar Mensaje"):
+            mch = st.text_input("Escribe tu mensaje...")
+            if st.button("Enviar Mensaje", type="primary", use_container_width=True):
                 if mch:
-                    st.session_state.chat.append({"Hora": datetime.now().strftime("%H:%M"), "De": f"Compras -> {pch}", "Mensaje": mch})
-                    st.success("Enviado.")
+                    st.session_state.chat.append({"Hora": datetime.now().strftime("%H:%M"), "De": f"Compras para {pch}", "Mensaje": mch})
+                    st.success("Mensaje enviado.")
     with a3:
         with st.popover("📋 Políticas", use_container_width=True):
-            st.write("Lotes de 50 kg | Mín. 7 lotes rápidos (<=3 días) | Calidad >= 70 pts")
+            st.write("• Sacos cerrados de 50 kg.")
+            st.write("• Mínimo 7 sacos de entrega urgente (≤ 3 días).")
+            st.write("• Calidad mínima aprobada: 70 puntos.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     in1, in2 = st.columns(2)
@@ -160,36 +168,29 @@ elif st.session_state.user["rol"] == "Empresa":
 
         df_o = pd.DataFrame({
             "Proveedor": (pA["nombre"], pB["nombre"], pC["nombre"]),
-            "Calidad": (f"{pA['calidad']}/10", f"{pB['calidad']}/10", f"{pC['calidad']}/10"),
-            "Lotes": (la, lb, lc),
-            "Kilos": (la*50, lb*50, lc*50),
-            "Inversión": (la*pA["precio"], lb*pB["precio"], lc*pC["precio"])
+            "Calidad": (f"{pA['calidad']} / 10", f"{pB['calidad']} / 10", f"{pC['calidad']} / 10"),
+            "Sacos (50 kg)": (la, lb, lc),
+            "Kilos Totales": (la*50, lb*50, lc*50),
+            "Inversión ($)": (f"${la*pA['precio']:,.2f}", f"${lb*pB['precio']:,.2f}", f"${lc*pC['precio']:,.2f}")
         })
 
         tab1, tab2 = st.tabs(["🛒 Pedido Sugerido", "🗂️ Centro de Control"])
         with tab1:
             m1, m2, m3 = st.columns(3)
-            m1.metric("Calidad Promedio", f"{prom} / 10", f"{cal_tot} pts")
-            m2.metric("Inversión Total", f"${gasto:,.2f}", f"${presupuesto - gasto:,.2f} libre")
-            m3.metric("Total Lotes", f"{lotes_req} Lotes", f"{la + lb} rápidos")
+            m1.metric("Calidad Promedio", f"{prom} / 10", f"{cal_tot} pts totales")
+            m2.metric("Inversión Total", f"${gasto:,.2f}", f"${presupuesto - gasto:,.2f} disponible")
+            m3.metric("Total Sacos", f"{lotes_req} Sacos", f"{la + lb} entrega rápida")
 
             ct, cg = st.columns([1.3, 1])
             with ct:
                 st.dataframe(df_o, hide_index=True, use_container_width=True)
-                if st.button("✅ Enviar Orden a Proveedores", type="primary", use_container_width=True):
+                if st.button("✅ Autorizar y Enviar Orden", type="primary", use_container_width=True):
                     fol = f"OC-{len(st.session_state.ordenes) + 101}"
-                    st.session_state.ordenes.append({"Folio": fol, "Fecha": datetime.now().strftime("%d/%m %H:%M"), "Total": f"${gasto:,.2f}", "Lotes_A": la, "Lotes_B": lb, "Lotes_C": lc})
-                    st.success(f"Orden {fol} enviada al portal de cada proveedor.")
+                    st.session_state.ordenes.append({
+                        "Folio": fol, "Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                        "Total": f"${gasto:,.2f}", "Kilos": demanda,
+                        "Lotes_A": la, "Lotes_B": lb, "Lotes_C": lc
+                    })
+                    st.success(f"Orden {fol} autorizada y enviada a los proveedores.")
             with cg:
-                fig = px.pie(df_o[df_o["Lotes"] > 0], values="Inversión", names="Proveedor", hole=0.45, color_discrete_sequence=("#A0522D", "#CD853F", "#DEB887"))
-                fig.update_layout(margin=dict(t=10, b=10, l=10, r=10), paper_bgcolor="rgba(0,0,0,0)")
-                st.plotly_chart(fig, use_container_width=True)
-        with tab2:
-            st.markdown("##### Órdenes Emitidas")
-            st.dataframe(pd.DataFrame(st.session_state.ordenes), hide_index=True) if st.session_state.ordenes else st.info("Sin órdenes.")
-            b1, b2 = st.columns(2)
-            with b1:
-                st.markdown("##### Citas Agendadas")
-                st.dataframe(pd.DataFrame(st.session_state.citas), hide_index=True) if st.session_state.citas else st.info("Sin citas.")
-            with b2:
-                st.markdown("##### Mensajes")
+                df_graf = pd.DataFrame({"Proveedor": (pA["nombre"], pB["nombre"], pC["nombre"]), "Monto": (la*pA["precio"], lb*pB["precio"], lc*pC["precio"])})
