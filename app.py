@@ -1,138 +1,164 @@
 import streamlit as st
-import numpy as np
+import pulp
 import pandas as pd
 import plotly.express as px
-from scipy.optimize import milp, LinearConstraint, Bounds
 
 # 1. CONFIGURACIÓN DE LA PÁGINA
-st.set_page_config(page_title="OptiCoffee Supply", layout="wide")
+st.set_page_config(page_title="OptiCoffee Supply", layout="wide", page_icon="☕")
 
+# Control del estado de la pantalla (Navegación por botones)
+if 'pantalla' not in st.session_state:
+    st.session_state.pantalla = "Dashboard"
+
+# 2. ENCABEZADO Y BARRA SUPERIOR DE BOTONES DE NAVEGACIÓN
 st.title("☕ Sistema Inteligente de Asignación de Proveedores")
-st.markdown("Generador automático de órdenes de compra por lotes (50 kg) para maximizar la calidad del café.")
+st.markdown("Generador automático de órdenes de compra para maximizar la calidad del café.")
 
-# 2. PANEL IZQUIERDO (Barra lateral interactiva)
+# Botón desplegable / emergente para ver las 7 restricciones rápidamente desde cualquier pantalla
+with st.popover("📜 Ver las 7 Restricciones del Modelo (Firma de Contrato)", help="Haga clic para consultar las reglas matemáticas activas"):
+    st.markdown("### 📋 7 Restricciones Validadas del Negocio")
+    st.markdown("""
+    1. **Demanda Exacta:** Se deben surtir exactamente 12 lotes (600 kg de café).
+    2. **Presupuesto Máximo:** La inversión total no puede superar los $130,000.
+    3. **Calidad Mínima:** La suma de calidad acumulada debe ser de al menos 70 puntos.
+    4. **Entregas Rápidas:** Al menos 7 lotes deben ser entregados en 3 días o menos (Proveedores A y B).
+    5. **Capacidad Proveedor A:** Máximo 6 lotes disponibles.
+    6. **Capacidad Proveedor B:** Máximo 5 lotes disponibles.
+    7. **Capacidad Proveedor C:** Máximo 6 lotes disponibles.
+    """)
+
+st.divider()
+
+# BOTONES DE NAVEGACIÓN ENTRE PANTALLAS (No todo en una sola pantalla)
+col_nav1, col_nav2, col_nav3 = st.columns(3)
+
+with col_nav1:
+    if st.button("📊 Pantalla 1: Dashboard Principal", use_container_width=True, type="primary" if st.session_state.pantalla == "Dashboard" else "secondary"):
+        st.session_state.pantalla = "Dashboard"
+
+with col_nav2:
+    if st.button("🔍 Pantalla 2: Análisis de Restricciones", use_container_width=True, type="primary" if st.session_state.pantalla == "Restricciones" else "secondary"):
+        st.session_state.pantalla = "Restricciones"
+
+with col_nav3:
+    if st.button("📄 Pantalla 3: Orden de Compra y Exportación", use_container_width=True, type="primary" if st.session_state.pantalla == "Orden" else "secondary"):
+        st.session_state.pantalla = "Orden"
+
+st.divider()
+
+# 3. PANEL IZQUIERDO DE PARÁMETROS (Sidebar)
 st.sidebar.header("⚙️ Panel de Parámetros")
 st.sidebar.write("Ajuste las restricciones de su negocio:")
 
-presupuesto_max = st.sidebar.slider("R1. Presupuesto Máximo ($)", min_value=80000, max_value=200000, value=130000, step=1000)
-demanda_kg = st.sidebar.slider("R2. Demanda de Café (Kg)", min_value=300, max_value=850, value=600, step=50)
-calidad_minima_req = st.sidebar.slider("R3. Calidad Total Mínima (Pts)", min_value=30, max_value=150, value=70, step=5)
-entregas_rapidas_min = st.sidebar.slider("R4. Lotes Mínimos Entrega Rápida (A + B)", min_value=0, max_value=11, value=7, step=1)
+presupuesto_max = st.sidebar.slider("Presupuesto Máximo ($)", min_value=100000, max_value=150000, value=130000, step=1000)
+demanda_kg = st.sidebar.slider("Demanda de Café (Kg)", min_value=300, max_value=800, value=600, step=50)
 
-st.sidebar.subheader("📦 Capacidad Máxima por Proveedor (Lotes)")
-cap_a = st.sidebar.number_input("R5. Máx Lotes Proveedor A (Económico - 4 pts)", min_value=0, max_value=20, value=6)
-cap_b = st.sidebar.number_input("R6. Máx Lotes Proveedor B (Medio - 7 pts)", min_value=0, max_value=20, value=5)
-cap_c = st.sidebar.number_input("R7. Máx Lotes Proveedor C (Premium - 10 pts)", min_value=0, max_value=20, value=6)
+st.sidebar.divider()
+st.sidebar.success("✅ Algoritmo Simplex Activo")
 
-# 3. LÓGICA DE OPTIMIZACIÓN (Motor SciPy MILP / Simplex)
-lotes_requeridos = int(demanda_kg / 50)
+# 4. LÓGICA DE OPTIMIZACIÓN MATEMÁTICA (INTACTA - 100% Mención del modelo original)
+lotes_requeridos = int(demanda_kg / 50)  
 
-# Función Objetivo: Maximizar 4*x1 + 7*x2 + 10*x3 (en SciPy se minimiza multiplicando por -1)
-c = np.array([-4.0, -7.0, -10.0])
+prob = pulp.LpProblem("Maximizacion_Calidad", pulp.LpMaximize)
 
-# Variables enteras (1 = Integer)
-integrality = np.array([1, 1, 1])
+x1 = pulp.LpVariable("Proveedor_A", lowBound=0, cat='Integer')
+x2 = pulp.LpVariable("Proveedor_B", lowBound=0, cat='Integer')
+x3 = pulp.LpVariable("Proveedor_C", lowBound=0, cat='Integer')
 
-# Límites individuales (R5, R6, R7)
-bounds = Bounds(lb=np.array([0, 0, 0]), ub=np.array([cap_a, cap_b, cap_c]))
+prob += 4*x1 + 7*x2 + 10*x3, "Calidad_Total"
 
-# Matriz de Restricciones (R1, R2, R3, R4)
-A = np.array([
-    [1.0, 1.0, 1.0],          # R2. Demanda Exacta
-    [9000.0, 11000.0, 13000.0], # R1. Presupuesto Máximo
-    [4.0, 7.0, 10.0],         # R3. Calidad Total Mínima
-    [1.0, 1.0, 0.0]           # R4. Entregas Rápidas (A + B)
-])
+prob += x1 + x2 + x3 == lotes_requeridos, "Demanda_Exacta"
+prob += 9000*x1 + 11000*x2 + 13000*x3 <= presupuesto_max, "Presupuesto_Maximo"
+prob += 4*x1 + 7*x2 + 10*x3 >= 70, "Calidad_Minima"
+prob += x1 + x2 >= 7, "Entregas_Rapidas"
 
-b_inf = np.array([lotes_requeridos, -np.inf, calidad_minima_req, entregas_rapidas_min])
-b_sup = np.array([lotes_requeridos, presupuesto_max, np.inf, np.inf])
+prob += x1 <= 6, "Capacidad_A"
+prob += x2 <= 5, "Capacidad_B"
+prob += x3 <= 6, "Capacidad_C"
 
-restricciones = LinearConstraint(A, b_inf, b_sup)
+prob.solve()
+estado = pulp.LpStatus[prob.status]
 
-# Ejecutar el cálculo matemático
-resultado = milp(c=c, integrality=integrality, bounds=bounds, constraints=restricciones)
+# 5. RENDERIZADO DE PANTALLAS SEGÚN EL BOTÓN SELECCIONADO
 
-# 4. PANEL DERECHO (Resultados y Gráficos)
-if resultado.success:
-    x_opt = np.round(resultado.x).astype(int)
-    lotes_a, lotes_b, lotes_c = int(x_opt[0]), int(x_opt[1]), int(x_opt[2])
+if estado == "Optimal":
+    lotes_a = int(x1.varValue)
+    lotes_b = int(x2.varValue)
+    lotes_c = int(x3.varValue)
     
-    calidad_total = (4 * lotes_a) + (7 * lotes_b) + (10 * lotes_c)
-    calidad_promedio = calidad_total / lotes_requeridos if lotes_requeridos > 0 else 0
-    gasto_total = (lotes_a * 9000) + (lotes_b * 11000) + (lotes_c * 13000)
-    ahorro = presupuesto_max - gasto_total
-    
-    # Tarjetas de Indicadores (KPIs)
-    st.subheader("📊 Indicadores de la Orden Óptima")
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Puntuación Total", f"{calidad_total} pts", f"Promedio: {calidad_promedio:.1f} / 10")
-    col2.metric("Presupuesto Utilizado", f"${gasto_total:,.0f}", f"Holgura: ${ahorro:,.0f}")
-    col3.metric("Total Lotes (50 kg)", f"{lotes_requeridos} lotes", f"{demanda_kg} Kg exactos")
-    col4.metric("Lotes Rápidos (A + B)", f"{lotes_a + lotes_b} lotes", f"Mínimo: {entregas_rapidas_min}")
+    calidad_total = int(pulp.value(prob.objective))
+    gasto_total = (lotes_a*9000) + (lotes_b*11000) + (lotes_c*13000)
 
-    st.divider()
+    datos_orden = {
+        "Proveedor": ["Proveedor A (Económico)", "Proveedor B (Medio)", "Proveedor C (Premium)"],
+        "Lotes a Comprar": [lotes_a, lotes_b, lotes_c],
+        "Costo por Lote ($)": [9000, 11000, 13000],
+        "Inversión Total ($)": [lotes_a*9000, lotes_b*11000, lotes_c*13000],
+        "Puntos Calidad": [lotes_a*4, lotes_b*7, lotes_c*10]
+    }
+    df_orden = pd.DataFrame(datos_orden)
 
-    # Tabla y Gráfica lado a lado
-    col_tabla, col_graf = st.columns([1.2, 1])
+    # --- PANTALLA 1: DASHBOARD PRINCIPAL ---
+    if st.session_state.pantalla == "Dashboard":
+        st.subheader("📊 Pantalla Principal: Indicadores de la Orden")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Puntuación Total", f"{calidad_total} pts")
+        col2.metric("Presupuesto Utilizado", f"${gasto_total:,.2f}")
+        col3.metric("Lotes Totales", f"{int(lotes_requeridos)} lotes")
+        col4.metric("Lotes Rápidos (A+B)", f"{lotes_a + lotes_b} lotes")
+        
+        st.divider()
+        
+        col_graf1, col_graf2 = st.columns(2)
+        with col_graf1:
+            st.markdown("### 🍩 Distribución de la Inversión")
+            df_grafico = df_orden[df_orden["Lotes a Comprar"] > 0] 
+            fig = px.pie(df_grafico, values='Inversión Total ($)', names='Proveedor', hole=0.5, 
+                         color_discrete_sequence=px.colors.sequential.Teal)
+            st.plotly_chart(fig, use_container_width=True)
 
-    df_resultados = pd.DataFrame({
-        "Proveedor": list(("Proveedor A (Económico)", "Proveedor B (Medio)", "Proveedor C (Premium)")),
-        "Calidad (1-10)": list((4, 7, 10)),
-        "Costo por Lote ($)": list((9000, 11000, 13000)),
-        "Lotes Asignados (X)": list((lotes_a, lotes_b, lotes_c)),
-        "Kilos Totales (Kg)": list((lotes_a * 50, lotes_b * 50, lotes_c * 50)),
-        "Inversión Total ($)": list((lotes_a * 9000, lotes_b * 11000, lotes_c * 13000))
-    })
+        with col_graf2:
+            st.markdown("### 📈 Aportación de Calidad por Proveedor")
+            fig_bar = px.bar(df_grafico, x='Proveedor', y='Puntos Calidad', color='Proveedor',
+                             color_discrete_sequence=px.colors.sequential.Teal)
+            st.plotly_chart(fig_bar, use_container_width=True)
 
-    with col_tabla:
-        st.subheader("📋 Desglose de Orden de Compra")
-        st.dataframe(df_resultados, hide_index=True, use_container_width=True)
+    # --- PANTALLA 2: ANÁLISIS DE RESTRICCIONES ---
+    elif st.session_state.pantalla == "Restricciones":
+        st.subheader("🔍 Pantalla de Verificación de Restricciones")
+        st.write("Esta pantalla confirma cómo el modelo matemático cumple cada regla del negocio:")
 
-    with col_graf:
-        st.subheader("🍩 Distribución de Inversión ($)")
-        fig = px.pie(
-            df_resultados[df_resultados["Lotes Asignados (X)"] > 0],
-            values="Inversión Total ($)",
-            names="Proveedor",
-            hole=0.4,
-            color_discrete_sequence=list(("#A67B5B", "#6F4E37", "#3B2F2F"))
+        col_r1, col_r2 = st.columns(2)
+
+        with col_r1:
+            st.info(f"**Restricción 1 (Demanda):** {lotes_a + lotes_b + lotes_c} de {lotes_requeridos} lotes (Cumplido ✅)")
+            st.info(f"**Restricción 2 (Presupuesto):** ${gasto_total:,.2f} de ${presupuesto_max:,.2f} máximo (Cumplido ✅)")
+            st.info(f"**Restricción 3 (Calidad Mínima):** {calidad_total} pts acumulados vs 70 pts mínimos (Cumplido ✅)")
+            st.info(f"**Restricción 4 (Urgencia $\le$ 3 días):** {lotes_a + lotes_b} lotes entregados vs 7 mínimos (Cumplido ✅)")
+
+        with col_r2:
+            st.success(f"**Restricción 5 (Capacidad A):** {lotes_a} de 6 lotes permitidos (Dentro del límite ✅)")
+            st.success(f"**Restricción 6 (Capacidad B):** {lotes_b} de 5 lotes permitidos (Dentro del límite ✅)")
+            st.success(f"**Restricción 7 (Capacidad C):** {lotes_c} de 6 lotes permitidos (Dentro del límite ✅)")
+
+    # --- PANTALLA 3: ORDEN DE COMPRA Y EXPORTACIÓN ---
+    elif st.session_state.pantalla == "Orden":
+        st.subheader("📄 Pantalla de Orden de Compra Ejecutiva")
+        st.write("Detalle formal para enviar al departamento de finanzas y compras:")
+        
+        st.dataframe(df_orden, hide_index=True, use_container_width=True)
+        
+        st.divider()
+        csv = df_orden.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Descargar Orden de Compra en formato CSV",
+            data=csv,
+            file_name='Orden_Compra_OptiCoffee.csv',
+            mime='text/csv',
+            type="primary",
+            use_container_width=True
         )
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Desplegable con el estado de las 7 restricciones
-    with st.expander("🔍 Ver Verificación de las 7 Restricciones"):
-        df_rest = pd.DataFrame({
-            "Restricción": list((
-                "R1. Presupuesto Máximo",
-                "R2. Demanda Exacta",
-                "R3. Calidad Total Mínima",
-                "R4. Entregas Rápidas (A + B)",
-                "R5. Capacidad Máx Proveedor A",
-                "R6. Capacidad Máx Proveedor B",
-                "R7. Capacidad Máx Proveedor C"
-            )),
-            "Valor Obtenido": list((
-                f"${gasto_total:,.0f}",
-                f"{lotes_requeridos} lotes",
-                f"{calidad_total} pts",
-                f"{lotes_a + lotes_b} lotes",
-                f"{lotes_a} lotes",
-                f"{lotes_b} lotes",
-                f"{lotes_c} lotes"
-            )),
-            "Límite Establecido": list((
-                f"<= ${presupuesto_max:,.0f}",
-                f"== {lotes_requeridos} lotes",
-                f">= {calidad_minima_req} pts",
-                f">= {entregas_rapidas_min} lotes",
-                f"<= {cap_a} lotes",
-                f"<= {cap_b} lotes",
-                f"<= {cap_c} lotes"
-            )),
-            "Estado": list(("✅ Cumplida",) * 7)
-        })
-        st.dataframe(df_rest, hide_index=True, use_container_width=True)
 
 else:
-    st.error("⚠️ **Solución Infactible:** No existe ninguna combinación de lotes que cumpla todas las restricciones al mismo tiempo.")
-    st.info("💡 **Sugerencia:** Intenta subir el presupuesto máximo, reducir los kilos demandados o bajar el mínimo de entregas rápidas (A + B).")
+    st.error("⚠️ Alerta: Con el presupuesto o demanda actual, es matemáticamente imposible cumplir todas las reglas del negocio.")
