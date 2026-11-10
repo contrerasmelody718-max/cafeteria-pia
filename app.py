@@ -100,23 +100,43 @@ elif st.session_state.user["rol"] == "Empresa":
 
     pA, pB, pC = st.session_state.provs["A"], st.session_state.provs["B"], st.session_state.provs["C"]
     lotes_req = int(demanda / 50)
+    c_obj = np.array([-float(pA["calidad"]), -float(pB["calidad"]), -float(pC["calidad"])])
+    b_bounds = Bounds(lb=np.zeros(3), ub=np.array([float(pA["stock"]), float(pB["stock"]), float(pC["stock"])]))
+    matriz_A = np.array([
+        [1.0, 1.0, 1.0],
+        [float(pA["precio"]), float(pB["precio"]), float(pC["precio"])],
+        [float(pA["calidad"]), float(pB["calidad"]), float(pC["calidad"])],
+        [1.0, 1.0, 0.0]
+    ])
+
+    # INTENTO 1: MODELO ESTRICTO (CUMPLE TODAS LAS REGLAS AL 100%)
     res = milp(
-        c=np.array([-float(pA["calidad"]), -float(pB["calidad"]), -float(pC["calidad"])]),
-        integrality=np.ones(3),
-        bounds=Bounds(lb=np.zeros(3), ub=np.array([float(pA["stock"]), float(pB["stock"]), float(pC["stock"])])),
-        constraints=LinearConstraint(
-            np.array([[1.0, 1.0, 1.0], [float(pA["precio"]), float(pB["precio"]), float(pC["precio"])], [float(pA["calidad"]), float(pB["calidad"]), float(pC["calidad"])], [1.0, 1.0, 0.0]]),
-            np.array([lotes_req, -np.inf, 70.0, 7.0], dtype=float),
-            np.array([lotes_req, presupuesto, np.inf, np.inf], dtype=float)
-        )
+        c=c_obj, integrality=np.ones(3), bounds=b_bounds,
+        constraints=LinearConstraint(matriz_A, np.array([lotes_req, -np.inf, 70.0, 7.0], dtype=float), np.array([lotes_req, presupuesto, np.inf, np.inf], dtype=float))
     )
+
+    modo_contingencia = False
+
+    # INTENTO 2 (PLAN B): SI NO ALCANZA EL DINERO, AJUSTA AL MÁXIMO VOLUMEN POSIBLE DENTRO DEL PRESUPUESTO
+    if not res.success:
+        modo_contingencia = True
+        res = milp(
+            c=np.array([-100.0 - float(pA["calidad"]), -100.0 - float(pB["calidad"]), -100.0 - float(pC["calidad"])]),
+            integrality=np.ones(3), bounds=b_bounds,
+            constraints=LinearConstraint(matriz_A, np.array([1.0, -np.inf, 0.0, 0.0], dtype=float), np.array([lotes_req, presupuesto, np.inf, np.inf], dtype=float))
+        )
 
     if res.success:
         xo = np.round(res.x).astype(int)
         la, lb, lc = int(xo.item(0)), int(xo.item(1)), int(xo.item(2))
+        sacos_reales = la + lb + lc
+        kilos_reales = sacos_reales * 50
         cal_tot = (pA["calidad"]*la) + (pB["calidad"]*lb) + (pC["calidad"]*lc)
         gasto = (la*pA["precio"]) + (lb*pB["precio"]) + (lc*pC["precio"])
-        prom = round(cal_tot / lotes_req, 2) if lotes_req > 0 else 0
+        prom = round(cal_tot / sacos_reales, 2) if sacos_reales > 0 else 0
+
+        if modo_contingencia:
+            st.warning(f"⚠️ **Ajuste Automático de Presupuesto:** Con **${presupuesto:,.2f}** no es posible cubrir los {demanda} kg completos bajo las políticas estándar. Se generó la **mejor alternativa posible** surtiendo **{kilos_reales} kg ({sacos_reales} sacos)** con máxima calidad sin pasarse de tu presupuesto.")
 
         df_o = pd.DataFrame({
             "Proveedor": (pA["nombre"], pB["nombre"], pC["nombre"]),
@@ -133,14 +153,14 @@ elif st.session_state.user["rol"] == "Empresa":
             m1, m2, m3 = st.columns(3)
             m1.metric("Calidad Promedio", f"{prom} / 10", f"{cal_tot} pts totales")
             m2.metric("Inversión Total", f"${gasto:,.2f}", f"${presupuesto - gasto:,.2f} disponible")
-            m3.metric("Total Sacos", f"{lotes_req} Sacos", f"{la + lb} entrega rápida")
+            m3.metric("Sacos Asignados", f"{sacos_reales} de {lotes_req} Sacos", f"{kilos_reales} kg cubiertos")
 
             ct, cg = st.columns((1.3, 1))
             with ct:
                 st.dataframe(df_o, hide_index=True, use_container_width=True)
                 if st.button("✅ Autorizar y Enviar Orden", type="primary", use_container_width=True):
                     fol = f"OC-{len(st.session_state.ordenes) + 100}"
-                    st.session_state.ordenes.append({"Folio": fol, "Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Total": f"${gasto:,.2f}", "Kilos": demanda, "Lotes_A": la, "Lotes_B": lb, "Lotes_C": lc})
+                    st.session_state.ordenes.append({"Folio": fol, "Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Total": f"${gasto:,.2f}", "Kilos": kilos_reales, "Lotes_A": la, "Lotes_B": lb, "Lotes_C": lc})
                     st.rerun()
             with cg:
                 df_graf = pd.DataFrame({"Proveedor": (pA["nombre"], pB["nombre"], pC["nombre"]), "Monto": (la*pA["precio"], lb*pB["precio"], lc*pC["precio"])})
@@ -150,4 +170,4 @@ elif st.session_state.user["rol"] == "Empresa":
         with tab2:
             mostrar_centro_control()
     else:
-        st.warning("No es posible cumplir el pedido con el presupuesto, volumen o stock actual.")
+        st.error("El presupuesto ingresado es menor al costo de un solo saco de café ($9,000). Aumenta el monto para generar una propuesta.")
