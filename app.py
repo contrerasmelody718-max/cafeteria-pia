@@ -18,18 +18,29 @@ USUARIOS = {
 
 if "user" not in st.session_state:
     st.session_state.user = None
+
 if "provs" not in st.session_state:
     st.session_state.provs = {
         "A": {"nombre": "Proveedor A (Económico)", "precio": 9000, "calidad": 4, "stock": 6},
         "B": {"nombre": "Proveedor B (Medio)", "precio": 11000, "calidad": 7, "stock": 5},
         "C": {"nombre": "Proveedor C (Premium)", "precio": 13000, "calidad": 10, "stock": 6}
     }
+
+# Datos iniciales precargados para que el Centro de Control siempre muestre actividad
 if "citas" not in st.session_state:
-    st.session_state.citas = []
+    st.session_state.citas = [
+        {"Proveedor": "Proveedor C (Premium)", "Fecha": "2026-11-12", "Motivo": "Catación de lote de altura y revisión de tiempos"}
+    ]
+
 if "chat" not in st.session_state:
-    st.session_state.chat = []
+    st.session_state.chat = [
+        {"Hora": "09:30", "De": "Proveedor B (Medio)", "Mensaje": "Buenos días, confirmamos disponibilidad inmediata de 5 sacos de 50 kg."}
+    ]
+
 if "ordenes" not in st.session_state:
-    st.session_state.ordenes = []
+    st.session_state.ordenes = [
+        {"Folio": "OC-100", "Fecha": "09/11/2026 16:20", "Total": "$130,000.00", "Kilos": 600, "Lotes_A": 2, "Lotes_B": 5, "Lotes_C": 5}
+    ]
 
 # 1. PANTALLA DE LOGIN
 if st.session_state.user is None:
@@ -56,7 +67,7 @@ elif st.session_state.user["rol"] == "Proveedor":
     pid = u["id"]
     mi_p = st.session_state.provs[pid]
 
-    c1, c2 = st.columns([4, 1])
+    c1, c2 = st.columns()
     with c1:
         mostrar_barra(f"Portal de Socios | {u['nombre']}", "Gestión de Inventario y Órdenes Asignadas", "Socio Certificado")
     with c2:
@@ -107,7 +118,7 @@ elif st.session_state.user["rol"] == "Proveedor":
 
 # 3. PORTAL GERENCIA DE COMPRAS
 elif st.session_state.user["rol"] == "Empresa":
-    c1, c2 = st.columns([4, 1])
+    c1, c2 = st.columns()
     with c1:
         mostrar_barra("OptiCoffee Supply Portal", "Planeación de Pedidos y Gestión de Proveedores", "Gerencia de Compras")
     with c2:
@@ -124,7 +135,7 @@ elif st.session_state.user["rol"] == "Empresa":
             mc = st.text_input("Motivo", "Revisión de entregas y calidad")
             if st.button("Confirmar Cita", type="primary", use_container_width=True):
                 st.session_state.citas.append({"Proveedor": pc, "Fecha": str(fc), "Motivo": mc})
-                st.success("Reunión agendada.")
+                st.rerun()
     with a2:
         with st.popover("💬 Chat Directo", use_container_width=True):
             pch = st.selectbox("Canal", ["Proveedor A", "Proveedor B", "Proveedor C"])
@@ -132,11 +143,11 @@ elif st.session_state.user["rol"] == "Empresa":
             if st.button("Enviar Mensaje", type="primary", use_container_width=True):
                 if mch:
                     st.session_state.chat.append({"Hora": datetime.now().strftime("%H:%M"), "De": f"Compras para {pch}", "Mensaje": mch})
-                    st.success("Mensaje enviado.")
+                    st.rerun()
     with a3:
         with st.popover("📋 Políticas", use_container_width=True):
             st.write("• Sacos cerrados de 50 kg.")
-            st.write("• Mínimo 7 sacos de entrega urgente (≤ 3 días).")
+            st.write("• Mínimo 7 sacos de entrega urgente (<= 3 días).")
             st.write("• Calidad mínima aprobada: 70 puntos.")
 
     st.markdown("<br>", unsafe_allow_html=True)
@@ -168,13 +179,15 @@ elif st.session_state.user["rol"] == "Empresa":
 
         df_o = pd.DataFrame({
             "Proveedor": (pA["nombre"], pB["nombre"], pC["nombre"]),
-            "Calidad": (f"{pA['calidad']} / 10", f"{pB['calidad']} / 10", f"{pC['calidad']} / 10"),
+            "Calidad": (f"{pA['calidad']} / 10", f"{pB['calidad']}/10", f"{pC['calidad']}/10"),
             "Sacos (50 kg)": (la, lb, lc),
             "Kilos Totales": (la*50, lb*50, lc*50),
             "Inversión ($)": (f"${la*pA['precio']:,.2f}", f"${lb*pB['precio']:,.2f}", f"${lc*pC['precio']:,.2f}")
         })
 
-        tab1, tab2 = st.tabs(["🛒 Pedido Sugerido", "🗂️ Centro de Control"])
+        total_items = len(st.session_state.ordenes) + len(st.session_state.citas) + len(st.session_state.chat)
+        tab1, tab2 = st.tabs(["🛒 Pedido Sugerido", f"🗂️ Centro de Control ({total_items})"])
+
         with tab1:
             m1, m2, m3 = st.columns(3)
             m1.metric("Calidad Promedio", f"{prom} / 10", f"{cal_tot} pts totales")
@@ -185,12 +198,3 @@ elif st.session_state.user["rol"] == "Empresa":
             with ct:
                 st.dataframe(df_o, hide_index=True, use_container_width=True)
                 if st.button("✅ Autorizar y Enviar Orden", type="primary", use_container_width=True):
-                    fol = f"OC-{len(st.session_state.ordenes) + 101}"
-                    st.session_state.ordenes.append({
-                        "Folio": fol, "Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                        "Total": f"${gasto:,.2f}", "Kilos": demanda,
-                        "Lotes_A": la, "Lotes_B": lb, "Lotes_C": lc
-                    })
-                    st.success(f"Orden {fol} autorizada y enviada a los proveedores.")
-            with cg:
-                df_graf = pd.DataFrame({"Proveedor": (pA["nombre"], pB["nombre"], pC["nombre"]), "Monto": (la*pA["precio"], lb*pB["precio"], lc*pC["precio"])})
