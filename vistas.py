@@ -26,17 +26,23 @@ def mostrar_portal_proveedor(u, pid, mi_p):
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("##### Reuniones Confirmadas")
-            mc = [c for c in st.session_state.citas if pid in c["Proveedor"]]
+            mc = [c for c in st.session_state.citas if f"Proveedor {pid}" in c["Proveedor"]]
             for cita in mc:
                 st.info(f"📅 **{cita['Fecha']}** — {cita['Motivo']}")
             if not mc:
                 st.write("No tienes reuniones agendadas.")
         with col2:
-            st.markdown("##### Conversación con Compras")
-            for msg in st.session_state.chat:
-                with st.chat_message("user" if "Proveedor" in msg["De"] else "assistant"):
-                    st.write(f"**{msg['De']}** ({msg['Hora']}): {msg['Mensaje']}")
-            mp = st.text_input("Escribe un mensaje para Compras...")
+            st.markdown("##### Conversación Privada con Compras")
+            # Filtro estricto: Solo muestra mensajes donde participe este proveedor (pid)
+            mis_mensajes = [m for m in st.session_state.chat if f"Proveedor {pid}" in m["De"]]
+            if mis_mensajes:
+                for msg in mis_mensajes:
+                    with st.chat_message("user" if msg["De"].startswith("Proveedor") else "assistant"):
+                        st.write(f"**{msg['De']}** ({msg['Hora']}): {msg['Mensaje']}")
+            else:
+                st.info("No hay mensajes previos en tu canal privado.")
+                
+            mp = st.text_input("Escribe un mensaje privado para Compras...")
             if st.button("Enviar Mensaje"):
                 if mp:
                     st.session_state.chat.append({"Hora": datetime.now().strftime("%H:%M"), "De": u["nombre"], "Mensaje": mp})
@@ -58,7 +64,7 @@ def mostrar_centro_control():
         for c in st.session_state.citas:
             st.warning(f"**{c['Proveedor']}** — Fecha: **{c['Fecha']}**\n\n📝 *Asunto:* {c['Motivo']}")
     with b2:
-        st.markdown("#### 💬 Buzón de Mensajes")
+        st.markdown("#### 💬 Buzón General de Mensajes")
         for m in st.session_state.chat:
             with st.chat_message("assistant" if "Compras" in m["De"] else "user"):
                 st.write(f"**{m['De']}** ({m['Hora']}): {m['Mensaje']}")
